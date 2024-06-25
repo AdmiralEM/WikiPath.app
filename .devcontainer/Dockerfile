@@ -1,3 +1,4 @@
+# Use the official Node.js image with Debian Bookworm as the base image
 FROM mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm
 
 # Install MongoDB command line tools - though mongo-database-tools not available on arm64
@@ -10,16 +11,17 @@ RUN . /etc/os-release \
     && if [ "$(dpkg --print-architecture)" = "amd64" ]; then apt-get install -y mongodb-database-tools; fi \
     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 
-# [Optional] Uncomment this section to install additional OS packages.
-# RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
-#     && apt-get -y install --no-install-recommends <your-package-list-here>
+# Create and set the working directory
+WORKDIR /workspace
 
-# [Optional] Uncomment if you want to install an additional version of node using nvm
-# ARG EXTRA_NODE_VERSION=10
-# RUN su node -c "source /usr/local/share/nvm/nvm.sh && nvm install ${EXTRA_NODE_VERSION}"
+# Set ownership and permissions
+RUN chown -R node:node /workspace && chmod -R 775 /workspace
 
-# [Optional] Uncomment if you want to install more global node modules
-# RUN su node -c "npm install -g <your-package-list-here>"
+# Switch to non-root user
+USER node
 
+# Expose the port the app runs on
+EXPOSE 3000
 
-
+# Start the app
+CMD ["sleep", "infinity"]

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      - .:/workspace:cached
+    network_mode: service:db
+
+  db:
+    image: mongo:latest
+    network_mode: bridge
+    volumes:
+      - mongodb-data:/data/db
+
+volumes:
+  mongodb-data:
