@@ -5,8 +5,8 @@ const HistoryRecorder = ({ url }) => {
   useEffect(() => {
     const recordHistory = async () => {
       try {
-        const response = await axios.post("/api/history", { url });
-        console.log("History recorded:", response.data);
+        const topic = url.split("/wiki/")[1].replace(/_/g, " ");
+        await axios.post("/api/history", { userId: "defaultUser", url, topic });
       } catch (err) {
         console.error("Error recording history:", err);
       }

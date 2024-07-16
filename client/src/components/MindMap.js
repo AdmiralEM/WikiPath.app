@@ -11,7 +11,7 @@ const MindMap = ({ data }) => {
 
     const tree = d3.tree().size([2 * Math.PI, 300]);
 
-    const root = d3.hierarchy({ name: "Root", children: data });
+    const root = d3.hierarchy({ name: "History", children: data });
     tree(root);
 
     const link = g
@@ -26,7 +26,10 @@ const MindMap = ({ data }) => {
           .linkRadial()
           .angle((d) => d.x)
           .radius((d) => d.y)
-      );
+      )
+      .style("fill", "none")
+      .style("stroke", "#555")
+      .style("stroke-width", 1.5);
 
     const node = g
       .selectAll(".node")
@@ -42,7 +45,7 @@ const MindMap = ({ data }) => {
       `
       );
 
-    node.append("circle").attr("r", 5);
+    node.append("circle").attr("r", 5).style("fill", "#999");
 
     node
       .append("text")

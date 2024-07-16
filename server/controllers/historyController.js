@@ -1,4 +1,4 @@
-const History = require('../models/History');
+const History = require("../models/History");
 
 const getHistory = async (req, res) => {
   try {
