@@ -5,30 +5,306 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>WikiPath</title>
     <style>
+      /* Catppuccin Mocha */
+      :root {
+        --base: #1e1e2e;
+        --mantle: #181825;
+        --crust: #11111b;
+        --surface0: #313244;
+        --surface1: #45475a;
+        --surface2: #585b70;
+        --overlay0: #6c7086;
+        --overlay1: #7f849c;
+        --subtext0: #a6adc8;
+        --subtext1: #bac2de;
+        --text: #cdd6f4;
+        --lavender: #b4befe;
+        --blue: #89b4fa;
+        --green: #a6e3a1;
+        --red: #f38ba8;
+        --peach: #fab387;
+        --yellow: #f9e2af;
+        --mauve: #cba6f7;
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
       body {
-        width: 320px;
-        min-height: 200px;
-        margin: 0;
-        padding: 16px;
-        font-family: system-ui, sans-serif;
-        background: #1e1e2e;
-        color: #cdd6f4;
+        width: 340px;
+        min-height: 120px;
+        font-family: system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        background: var(--base);
+        color: var(--text);
+        padding: 12px;
       }
-      h1 {
-        font-size: 1rem;
-        margin: 0 0 8px;
-        color: #b4befe;
+
+      /* Header */
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
       }
-      p {
-        font-size: 0.875rem;
-        color: #a6adc8;
-        margin: 0;
+
+      .logo {
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--lavender);
+        letter-spacing: -0.3px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--overlay0);
+        flex-shrink: 0;
+      }
+
+      .status-dot.active {
+        background: var(--green);
+        box-shadow: 0 0 6px var(--green);
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .status-label {
+        font-size: 11px;
+        color: var(--subtext0);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .status-label.active {
+        color: var(--green);
+      }
+
+      /* Session card */
+      .session-card {
+        background: var(--mantle);
+        border: 1px solid var(--surface0);
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+      }
+
+      .session-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 8px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+
+      .stat {
+        background: var(--surface0);
+        border-radius: 6px;
+        padding: 6px 8px;
+      }
+
+      .stat-label {
+        font-size: 10px;
+        color: var(--overlay1);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        margin-bottom: 2px;
+      }
+
+      .stat-value {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--lavender);
+      }
+
+      /* Idle state */
+      .idle-message {
+        text-align: center;
+        padding: 16px 0;
+        color: var(--subtext0);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      /* Buttons */
+      .btn-row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      button {
+        flex: 1;
+        padding: 7px 10px;
+        border: none;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+
+      button:hover {
+        opacity: 0.85;
+      }
+
+      button:active {
+        opacity: 0.7;
+      }
+
+      .btn-end {
+        background: var(--red);
+        color: var(--base);
+      }
+
+      .btn-export {
+        background: var(--surface1);
+        color: var(--text);
+      }
+
+      /* Recent sessions */
+      .section-title {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--overlay1);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+      }
+
+      .session-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .session-item {
+        background: var(--mantle);
+        border: 1px solid var(--surface0);
+        border-radius: 6px;
+        padding: 7px 10px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .session-item-title {
+        font-size: 12px;
+        color: var(--subtext1);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .session-item-meta {
+        font-size: 10px;
+        color: var(--overlay0);
+        white-space: nowrap;
+      }
+
+      .session-item-date {
+        font-size: 10px;
+        color: var(--overlay0);
+        grid-column: 1 / -1;
+      }
+
+      .empty {
+        color: var(--overlay0);
+        font-size: 12px;
+        text-align: center;
+        padding: 8px 0;
+      }
+
+      .loading {
+        color: var(--overlay0);
+        font-size: 12px;
+        text-align: center;
+        padding: 20px 0;
+      }
+
+      #error-msg {
+        color: var(--red);
+        font-size: 11px;
+        text-align: center;
+        padding: 8px 0;
+        display: none;
       }
     </style>
   </head>
   <body>
-    <h1>WikiPath</h1>
-    <p>Popup coming in Phase 2.</p>
+    <div class="header">
+      <span class="logo">WikiPath</span>
+      <div class="status-row">
+        <div id="status-dot" class="status-dot"></div>
+        <span id="status-label" class="status-label">Loading…</span>
+      </div>
+    </div>
+
+    <div id="error-msg"></div>
+    <div id="loading" class="loading">Loading…</div>
+
+    <!-- Active session card (hidden until active) -->
+    <div id="active-section" style="display:none">
+      <div class="session-card">
+        <div id="session-title" class="session-title"></div>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat-label">Visits</div>
+            <div id="stat-visits" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Unique</div>
+            <div id="stat-unique" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Depth</div>
+            <div id="stat-depth" class="stat-value">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Wikis</div>
+            <div id="stat-wikis" class="stat-value">0</div>
+          </div>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-end" id="btn-end">End Session</button>
+        <button class="btn-export" id="btn-export">Export JSON</button>
+      </div>
+    </div>
+
+    <!-- Idle state -->
+    <div id="idle-section" style="display:none">
+      <div class="idle-message">
+        No active session.<br />Browse Wikipedia to start one.
+      </div>
+      <div class="btn-row">
+        <button class="btn-export" id="btn-export-idle">Export JSON</button>
+      </div>
+    </div>
+
+    <!-- Recent sessions -->
+    <div id="recent-section" style="display:none">
+      <div class="section-title">Recent Sessions</div>
+      <div id="session-list" class="session-list"></div>
+    </div>
+
     <script src="popup.js" type="module"></script>
   </body>
 </html>
