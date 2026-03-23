@@ -1,21 +1,23 @@
 {
-  "name": "Node.js & Mongo DB",
-  "dockerComposeFile": "../docker-compose.yml",
-  "service": "app",
-  "workspaceFolder": "/workspace",
+  "name": "WikiPath.app",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "postCreateCommand": "sudo corepack enable && sudo corepack prepare pnpm@latest --activate && pnpm install",
   "customizations": {
     "vscode": {
       "extensions": [
-        "mongodb.mongodb-vscode",
         "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode"
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss"
       ],
       "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
         "editor.formatOnSave": true,
         "terminal.integrated.defaultProfile.linux": "bash"
       }
     }
   },
-  "forwardPorts": [3000, 27017],
-  "remoteUser": "node"
+  "forwardPorts": [3000],
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {}
+  }
 }

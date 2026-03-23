@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "WikiPath",
+  "version": "0.1.0",
+  "description": "Track your Wikipedia browsing sessions and visualize them as interactive mind maps.",
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "*://*.wikipedia.org/*",
+    "*://*.fandom.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.wikipedia.org/wiki/*",
+        "*://*.fandom.com/wiki/*"
+      ],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WikiPath",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
