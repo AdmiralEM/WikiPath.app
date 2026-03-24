@@ -18,20 +18,21 @@ import type {
   WikiPathExport,
 } from "@wikipath/shared";
 
-const DB_NAME = "wikipath";
+const DEFAULT_DB_NAME = "wikipath";
 const DB_VERSION = 1;
 
 // -----------------------------------------------------------------------------
-// DB bootstrap
+// DB bootstrap — per-name singleton so tests can use isolated DB names
 // -----------------------------------------------------------------------------
 
-let _db: IDBDatabase | null = null;
+const _dbs = new Map<string, IDBDatabase>();
 
-function openDB(): Promise<IDBDatabase> {
-  if (_db) return Promise.resolve(_db);
+function openDB(dbName: string): Promise<IDBDatabase> {
+  const cached = _dbs.get(dbName);
+  if (cached) return Promise.resolve(cached);
 
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const req = indexedDB.open(dbName, DB_VERSION);
 
     req.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result;
@@ -51,8 +52,9 @@ function openDB(): Promise<IDBDatabase> {
     };
 
     req.onsuccess = (event) => {
-      _db = (event.target as IDBOpenDBRequest).result;
-      resolve(_db);
+      const db = (event.target as IDBOpenDBRequest).result;
+      _dbs.set(dbName, db);
+      resolve(db);
     };
 
     req.onerror = (event) => {
@@ -93,10 +95,16 @@ function getAllByIndex<T>(index: IDBIndex, query: IDBValidKey): Promise<T[]> {
 // -----------------------------------------------------------------------------
 
 export class IndexedDBStorageAdapter implements StorageAdapter {
+  private readonly dbName: string;
+
+  constructor(dbName?: string) {
+    this.dbName = dbName ?? DEFAULT_DB_NAME;
+  }
+
   // --- Sessions ---
 
   async getSessions(options?: SessionQueryOptions): Promise<Session[]> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "sessions", "readonly").objectStore("sessions");
     let sessions = await getAllFromStore<Session>(store);
 
@@ -111,7 +119,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async getSession(id: string): Promise<Session | null> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "sessions", "readonly").objectStore("sessions");
     const result = await idbRequest<Session | undefined>(
       store.get(id) as IDBRequest<Session | undefined>
@@ -120,7 +128,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async createSession(session: Omit<Session, "id">): Promise<Session> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const newSession: Session = { ...session, id: generateId() };
     const store = tx(db, "sessions", "readwrite").objectStore("sessions");
     await idbRequest(store.add(newSession));
@@ -131,14 +139,14 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     const existing = await this.getSession(id);
     if (!existing) throw new Error(`Session not found: ${id}`);
     const updated: Session = { ...existing, ...updates, id };
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "sessions", "readwrite").objectStore("sessions");
     await idbRequest(store.put(updated));
     return updated;
   }
 
   async deleteSession(id: string): Promise<void> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const t = tx(db, ["sessions", "visits"], "readwrite");
 
     // Delete session
@@ -158,14 +166,14 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   // --- Visits ---
 
   async getVisitsBySession(sessionId: string): Promise<Visit[]> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "visits", "readonly").objectStore("visits");
     const index = store.index("by_session");
     return getAllByIndex<Visit>(index, sessionId);
   }
 
   async getVisit(id: string): Promise<Visit | null> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "visits", "readonly").objectStore("visits");
     const result = await idbRequest<Visit | undefined>(
       store.get(id) as IDBRequest<Visit | undefined>
@@ -174,7 +182,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async createVisit(visit: Omit<Visit, "id">): Promise<Visit> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const newVisit: Visit = { ...visit, id: generateId() };
     const store = tx(db, "visits", "readwrite").objectStore("visits");
     await idbRequest(store.add(newVisit));
@@ -185,7 +193,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     const existing = await this.getVisit(id);
     if (!existing) throw new Error(`Visit not found: ${id}`);
     const updated: Visit = { ...existing, ...updates, id };
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "visits", "readwrite").objectStore("visits");
     await idbRequest(store.put(updated));
     return updated;
@@ -194,7 +202,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   // --- Search & Analysis ---
 
   async searchVisits(query: string): Promise<Visit[]> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "visits", "readonly").objectStore("visits");
     const all = await getAllFromStore<Visit>(store);
     const lower = query.toLowerCase();
@@ -206,7 +214,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async getArticleHistory(articleId: string): Promise<Visit[]> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "visits", "readonly").objectStore("visits");
     const index = store.index("by_article");
     const visits = await getAllByIndex<Visit>(index, articleId);
@@ -214,7 +222,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async getTopArticles(limit: number): Promise<TopArticle[]> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const store = tx(db, "visits", "readonly").objectStore("visits");
     const all = await getAllFromStore<Visit>(store);
 
@@ -239,7 +247,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async getOverlappingSessions(articleId: string): Promise<Session[]> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const visitStore = tx(db, "visits", "readonly").objectStore("visits");
     const index = visitStore.index("by_article");
     const visits = await getAllByIndex<Visit>(index, articleId);
@@ -256,7 +264,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   // --- Bulk Operations ---
 
   async exportAll(): Promise<WikiPathExport> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const t = tx(db, ["sessions", "visits"], "readonly");
     const sessions = await getAllFromStore<Session>(t.objectStore("sessions"));
     const visits = await getAllFromStore<Visit>(t.objectStore("visits"));
@@ -271,7 +279,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async importAll(data: WikiPathExport): Promise<ImportResult> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const t = tx(db, ["sessions", "visits"], "readwrite");
     const sessionStore = t.objectStore("sessions");
     const visitStore = t.objectStore("visits");
@@ -292,7 +300,7 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
   }
 
   async clear(): Promise<void> {
-    const db = await openDB();
+    const db = await openDB(this.dbName);
     const t = tx(db, ["sessions", "visits"], "readwrite");
     await Promise.all([
       idbRequest(t.objectStore("sessions").clear()),

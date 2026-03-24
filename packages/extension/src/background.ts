@@ -51,7 +51,7 @@ const SKIP_NAMESPACES = [
   "WP:",
 ];
 
-function isNonArticle(title: string): boolean {
+export function isNonArticle(title: string): boolean {
   return SKIP_NAMESPACES.some((ns) => title.startsWith(ns));
 }
 
