@@ -172,7 +172,7 @@ export default function DashboardPage() {
                 </div>
               </div>
               <a
-                href={`/session/${selectedSession.id}/`}
+                href={`/session?id=${selectedSession.id}`}
                 className="ml-auto text-xs px-3 py-1.5 rounded-md bg-[var(--ctp-surface0)] text-[var(--ctp-lavender)] hover:bg-[var(--ctp-surface1)] transition-colors"
               >
                 Full view ↗
