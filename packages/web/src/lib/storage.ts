@@ -13,13 +13,14 @@ import type {
   Session,
   SessionQueryOptions,
   StorageAdapter,
+  StoredEdge,
   TopArticle,
   Visit,
   WikiPathExport,
 } from "@wikipath/shared";
 
 const DEFAULT_DB_NAME = "wikipath";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // -----------------------------------------------------------------------------
 // DB bootstrap — per-name singleton so tests can use isolated DB names
@@ -48,6 +49,12 @@ function openDB(dbName: string): Promise<IDBDatabase> {
         visitStore.createIndex("by_session", "sessionId", { unique: false });
         visitStore.createIndex("by_article", "articleId", { unique: false });
         visitStore.createIndex("by_visited_at", "visitedAt", { unique: false });
+      }
+
+      // Edges store
+      if (!db.objectStoreNames.contains("edges")) {
+        const edgeStore = db.createObjectStore("edges", { keyPath: "id" });
+        edgeStore.createIndex("by_session", "sessionId", { unique: false });
       }
     };
 
@@ -147,19 +154,29 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
 
   async deleteSession(id: string): Promise<void> {
     const db = await openDB(this.dbName);
-    const t = tx(db, ["sessions", "visits"], "readwrite");
+    const t = tx(db, ["sessions", "visits", "edges"], "readwrite");
 
     // Delete session
     await idbRequest(t.objectStore("sessions").delete(id));
 
     // Delete all visits for this session
     const visitStore = t.objectStore("visits");
-    const index = visitStore.index("by_session");
+    const visitIndex = visitStore.index("by_session");
     const visitIds = await idbRequest<string[]>(
-      index.getAllKeys(id) as IDBRequest<string[]>
+      visitIndex.getAllKeys(id) as IDBRequest<string[]>
     );
     for (const vid of visitIds) {
       await idbRequest(visitStore.delete(vid));
+    }
+
+    // Delete all edges for this session
+    const edgeStore = t.objectStore("edges");
+    const edgeIndex = edgeStore.index("by_session");
+    const edgeIds = await idbRequest<string[]>(
+      edgeIndex.getAllKeys(id) as IDBRequest<string[]>
+    );
+    for (const eid of edgeIds) {
+      await idbRequest(edgeStore.delete(eid));
     }
   }
 
@@ -197,6 +214,23 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     const store = tx(db, "visits", "readwrite").objectStore("visits");
     await idbRequest(store.put(updated));
     return updated;
+  }
+
+  // --- Edges ---
+
+  async getEdgesBySession(sessionId: string): Promise<StoredEdge[]> {
+    const db = await openDB(this.dbName);
+    const store = tx(db, "edges", "readonly").objectStore("edges");
+    const index = store.index("by_session");
+    return getAllByIndex<StoredEdge>(index, sessionId);
+  }
+
+  async createEdge(edge: Omit<StoredEdge, "id">): Promise<StoredEdge> {
+    const db = await openDB(this.dbName);
+    const newEdge: StoredEdge = { ...edge, id: generateId() };
+    const store = tx(db, "edges", "readwrite").objectStore("edges");
+    await idbRequest(store.add(newEdge));
+    return newEdge;
   }
 
   // --- Search & Analysis ---
@@ -265,9 +299,10 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
 
   async exportAll(): Promise<WikiPathExport> {
     const db = await openDB(this.dbName);
-    const t = tx(db, ["sessions", "visits"], "readonly");
+    const t = tx(db, ["sessions", "visits", "edges"], "readonly");
     const sessions = await getAllFromStore<Session>(t.objectStore("sessions"));
     const visits = await getAllFromStore<Visit>(t.objectStore("visits"));
+    const edges = await getAllFromStore<StoredEdge>(t.objectStore("edges"));
 
     return {
       version: 1,
@@ -275,14 +310,16 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
       platform: "web",
       sessions,
       visits,
+      edges,
     };
   }
 
   async importAll(data: WikiPathExport): Promise<ImportResult> {
     const db = await openDB(this.dbName);
-    const t = tx(db, ["sessions", "visits"], "readwrite");
+    const t = tx(db, ["sessions", "visits", "edges"], "readwrite");
     const sessionStore = t.objectStore("sessions");
     const visitStore = t.objectStore("visits");
+    const edgeStore = t.objectStore("edges");
 
     const promises: Promise<unknown>[] = [];
     for (const session of data.sessions) {
@@ -291,20 +328,25 @@ export class IndexedDBStorageAdapter implements StorageAdapter {
     for (const visit of data.visits) {
       promises.push(idbRequest(visitStore.put(visit)));
     }
+    for (const edge of data.edges ?? []) {
+      promises.push(idbRequest(edgeStore.put(edge)));
+    }
     await Promise.all(promises);
 
     return {
       sessions: data.sessions.length,
       visits: data.visits.length,
+      edges: (data.edges ?? []).length,
     };
   }
 
   async clear(): Promise<void> {
     const db = await openDB(this.dbName);
-    const t = tx(db, ["sessions", "visits"], "readwrite");
+    const t = tx(db, ["sessions", "visits", "edges"], "readwrite");
     await Promise.all([
       idbRequest(t.objectStore("sessions").clear()),
       idbRequest(t.objectStore("visits").clear()),
+      idbRequest(t.objectStore("edges").clear()),
     ]);
   }
 }

@@ -13,6 +13,7 @@ import type {
   Session,
   SessionQueryOptions,
   StorageAdapter,
+  StoredEdge,
   TopArticle,
   Visit,
   WikiPathExport,
@@ -21,8 +22,10 @@ import type {
 // Storage key prefixes
 const SESSION_PREFIX = "session:";
 const VISIT_PREFIX = "visit:";
+const EDGE_PREFIX = "edge:";
 const SESSION_INDEX_KEY = "index:sessions"; // ordered list of session IDs
 const VISIT_INDEX_PREFIX = "index:visits:"; // per-session visit ID list
+const EDGE_INDEX_PREFIX = "index:edges:"; // per-session edge ID list
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -38,6 +41,14 @@ function visitKey(id: string): string {
 
 function visitIndexKey(sessionId: string): string {
   return `${VISIT_INDEX_PREFIX}${sessionId}`;
+}
+
+function edgeKey(id: string): string {
+  return `${EDGE_PREFIX}${id}`;
+}
+
+function edgeIndexKey(sessionId: string): string {
+  return `${EDGE_INDEX_PREFIX}${sessionId}`;
 }
 
 async function storageGet<T>(key: string): Promise<T | undefined> {
@@ -120,10 +131,13 @@ export class ChromeStorageAdapter implements StorageAdapter {
 
   async deleteSession(id: string): Promise<void> {
     const visitIds = (await storageGet<string[]>(visitIndexKey(id))) ?? [];
+    const edgeIds = (await storageGet<string[]>(edgeIndexKey(id))) ?? [];
     const keysToRemove = [
       sessionKey(id),
       visitIndexKey(id),
+      edgeIndexKey(id),
       ...visitIds.map(visitKey),
+      ...edgeIds.map(edgeKey),
     ];
     await storageRemove(keysToRemove);
 
@@ -171,6 +185,30 @@ export class ChromeStorageAdapter implements StorageAdapter {
     const updated: Visit = { ...existing, ...updates, id };
     await storageSet({ [visitKey(id)]: updated });
     return updated;
+  }
+
+  // --- Edges ---
+
+  async getEdgesBySession(sessionId: string): Promise<StoredEdge[]> {
+    const edgeIds = (await storageGet<string[]>(edgeIndexKey(sessionId))) ?? [];
+    if (edgeIds.length === 0) return [];
+    const keys = edgeIds.map(edgeKey);
+    const records = await storageGetMulti<StoredEdge>(keys);
+    return edgeIds
+      .map((id) => records[edgeKey(id)])
+      .filter((e): e is StoredEdge => e !== undefined);
+  }
+
+  async createEdge(edge: Omit<StoredEdge, "id">): Promise<StoredEdge> {
+    const id = generateId();
+    const newEdge: StoredEdge = { ...edge, id };
+    const edgeIds = (await storageGet<string[]>(edgeIndexKey(edge.sessionId))) ?? [];
+    edgeIds.push(id);
+    await storageSet({
+      [edgeKey(id)]: newEdge,
+      [edgeIndexKey(edge.sessionId)]: edgeIds,
+    });
+    return newEdge;
   }
 
   // --- Search & Analysis ---
@@ -239,12 +277,15 @@ export class ChromeStorageAdapter implements StorageAdapter {
     const sessionIds = (await storageGet<string[]>(SESSION_INDEX_KEY)) ?? [];
     const sessions: Session[] = [];
     const visits: Visit[] = [];
+    const edges: StoredEdge[] = [];
 
     for (const sid of sessionIds) {
       const session = await this.getSession(sid);
       if (session) sessions.push(session);
       const sessionVisits = await this.getVisitsBySession(sid);
       visits.push(...sessionVisits);
+      const sessionEdges = await this.getEdgesBySession(sid);
+      edges.push(...sessionEdges);
     }
 
     return {
@@ -253,6 +294,7 @@ export class ChromeStorageAdapter implements StorageAdapter {
       platform: "chrome-extension",
       sessions,
       visits,
+      edges,
     };
   }
 
@@ -272,9 +314,19 @@ export class ChromeStorageAdapter implements StorageAdapter {
       idx.push(visit.id);
       visitIndexes.set(visit.sessionId, idx);
     }
-
     for (const [sid, vids] of visitIndexes) {
       items[visitIndexKey(sid)] = vids;
+    }
+
+    const edgeIndexes = new Map<string, string[]>();
+    for (const edge of data.edges ?? []) {
+      items[edgeKey(edge.id)] = edge;
+      const idx = edgeIndexes.get(edge.sessionId) ?? [];
+      idx.push(edge.id);
+      edgeIndexes.set(edge.sessionId, idx);
+    }
+    for (const [sid, eids] of edgeIndexes) {
+      items[edgeIndexKey(sid)] = eids;
     }
 
     const existingIds = (await storageGet<string[]>(SESSION_INDEX_KEY)) ?? [];
@@ -286,6 +338,7 @@ export class ChromeStorageAdapter implements StorageAdapter {
     return {
       sessions: data.sessions.length,
       visits: data.visits.length,
+      edges: (data.edges ?? []).length,
     };
   }
 

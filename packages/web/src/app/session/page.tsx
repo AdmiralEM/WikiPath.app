@@ -9,7 +9,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import type { Session, Visit } from "@wikipath/shared";
+import type { Session, StoredEdge, Visit } from "@wikipath/shared";
 import { formatDuration } from "@wikipath/shared";
 import { storageAdapter } from "@/lib/storage";
 import VisitDetail from "@/components/VisitDetail";
@@ -29,6 +29,7 @@ function SessionDetailContent() {
 
   const [session, setSession] = useState<Session | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [contextualEdges, setContextualEdges] = useState<StoredEdge[]>([]);
   const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -43,9 +44,13 @@ function SessionDetailContent() {
     try {
       const s = await storageAdapter.getSession(id);
       if (!s) { setNotFound(true); return; }
-      const v = await storageAdapter.getVisitsBySession(id);
+      const [v, e] = await Promise.all([
+        storageAdapter.getVisitsBySession(id),
+        storageAdapter.getEdgesBySession(id),
+      ]);
       setSession(s);
       setVisits(v);
+      setContextualEdges(e);
     } finally {
       setLoading(false);
     }
@@ -108,6 +113,7 @@ function SessionDetailContent() {
         <div className="flex-1 overflow-hidden">
           <SessionGraph
             visits={visits}
+            contextualEdges={contextualEdges}
             rootVisitId={session.rootVisitId}
             onVisitSelect={setSelectedVisit}
           />

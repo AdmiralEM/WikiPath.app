@@ -2,11 +2,11 @@
 // =============================================================================
 // WikiPath — /explore
 // =============================================================================
-// Cross-session analysis: top articles, overlapping sessions, global stats.
+// Cross-session analysis: top articles, top categories, session overlap, stats.
 // =============================================================================
 
 import { useState, useEffect } from "react";
-import type { Session, TopArticle } from "@wikipath/shared";
+import type { Session, TopArticle, Visit } from "@wikipath/shared";
 import { formatDuration } from "@wikipath/shared";
 import { storageAdapter } from "@/lib/storage";
 
@@ -15,12 +15,19 @@ interface GlobalStats {
   totalVisits: number;
   uniqueArticles: number;
   totalReadingTimeMs: number;
+  avgDepth: number;
   wikis: string[];
+}
+
+interface TopCategory {
+  name: string;
+  count: number;
 }
 
 export default function ExplorePage() {
   const [stats, setStats] = useState<GlobalStats | null>(null);
   const [topArticles, setTopArticles] = useState<TopArticle[]>([]);
+  const [topCategories, setTopCategories] = useState<TopCategory[]>([]);
   const [recentSessions, setRecentSessions] = useState<Session[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<TopArticle | null>(null);
   const [overlappingSessions, setOverlappingSessions] = useState<Session[]>([]);
@@ -41,32 +48,45 @@ export default function ExplorePage() {
       setRecentSessions(sessions.slice(0, 5));
       setTopArticles(top);
 
-      // Aggregate global stats
+      // Aggregate global stats + categories
       let totalVisits = 0;
       let totalReadingTimeMs = 0;
+      let totalDepth = 0;
       const uniqueArticleIds = new Set<string>();
       const wikiDomains = new Set<string>();
+      const categoryCounts = new Map<string, number>();
 
       for (const session of sessions) {
         totalVisits += session.metadata.visitCount;
         session.metadata.wikis.forEach((w) => wikiDomains.add(w));
-      }
-
-      // Get unique articles from top articles list (best available)
-      top.forEach((a) => uniqueArticleIds.add(a.articleId));
-
-      // Estimate total reading time from sessions (endedAt - startedAt for finished sessions)
-      for (const session of sessions) {
         if (session.endedAt !== null) {
           totalReadingTimeMs += session.endedAt - session.startedAt;
         }
+
+        // Collect per-visit data for categories and depth
+        const visits: Visit[] = await storageAdapter.getVisitsBySession(session.id);
+        for (const visit of visits) {
+          uniqueArticleIds.add(visit.articleId);
+          totalDepth += visit.depth;
+          for (const cat of visit.metadata.categories ?? []) {
+            categoryCounts.set(cat, (categoryCounts.get(cat) ?? 0) + 1);
+          }
+        }
       }
+
+      const topCats: TopCategory[] = [...categoryCounts.entries()]
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 15);
+
+      setTopCategories(topCats);
 
       setStats({
         totalSessions: sessions.length,
         totalVisits,
         uniqueArticles: uniqueArticleIds.size,
         totalReadingTimeMs,
+        avgDepth: totalVisits > 0 ? Math.round((totalDepth / totalVisits) * 10) / 10 : 0,
         wikis: [...wikiDomains],
       });
     } finally {
@@ -98,7 +118,7 @@ export default function ExplorePage() {
           <h2 className="text-sm font-semibold text-[var(--ctp-subtext1)] uppercase tracking-wide mb-3">
             Overview
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
             <StatCard label="Sessions" value={String(stats.totalSessions)} />
             <StatCard label="Total Visits" value={String(stats.totalVisits)} />
             <StatCard label="Unique Articles" value={String(stats.uniqueArticles)} />
@@ -106,6 +126,7 @@ export default function ExplorePage() {
               label="Reading Time"
               value={stats.totalReadingTimeMs > 0 ? formatDuration(stats.totalReadingTimeMs) : "—"}
             />
+            <StatCard label="Avg Depth" value={stats.totalVisits > 0 ? String(stats.avgDepth) : "—"} />
           </div>
           {stats.wikis.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
@@ -201,6 +222,28 @@ export default function ExplorePage() {
           )}
         </section>
       </div>
+
+      {/* Top categories */}
+      {topCategories.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-[var(--ctp-subtext1)] uppercase tracking-wide mb-3">
+            Top Categories
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {topCategories.map((cat) => (
+              <div
+                key={cat.name}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--ctp-surface0)] border border-[var(--ctp-surface1)]"
+              >
+                <span className="text-xs text-[var(--ctp-text)]">{cat.name}</span>
+                <span className="text-[10px] font-bold text-[var(--ctp-mauve)] bg-[var(--ctp-surface1)] rounded-full px-1.5">
+                  {cat.count}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

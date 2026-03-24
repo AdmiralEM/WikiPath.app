@@ -1,20 +1,11 @@
 // =============================================================================
 // WikiPath Extension — Content Script
 // =============================================================================
-// Injected on wiki pages. Captures article excerpts and scroll depth,
-// then forwards them to the background service worker.
+// Injected on wiki pages. Captures article excerpts, scroll depth, wiki links,
+// and categories, then forwards them to the background service worker.
 // =============================================================================
 
-// -----------------------------------------------------------------------------
-// Types (mirroring background message protocol)
-// -----------------------------------------------------------------------------
-
-interface UpdateMetadataMessage {
-  type: "UPDATE_METADATA";
-  visitId: string;
-  excerpt?: string;
-  scrollDepth?: number;
-}
+import { extractArticleTitle } from "@wikipath/shared";
 
 // -----------------------------------------------------------------------------
 // Excerpt extraction
@@ -39,6 +30,46 @@ function extractExcerpt(maxLength: number = 200): string | null {
   }
 
   return null;
+}
+
+// -----------------------------------------------------------------------------
+// Wiki link extraction
+// -----------------------------------------------------------------------------
+
+function extractWikiLinks(): string[] {
+  const content = document.querySelector("#mw-content-text .mw-parser-output");
+  if (!content) return [];
+
+  const anchors = content.querySelectorAll<HTMLAnchorElement>('a[href*="/wiki/"]');
+  const titles = new Set<string>();
+
+  for (const a of anchors) {
+    const href = a.getAttribute("href");
+    if (!href) continue;
+    // Build a full URL so extractArticleTitle can parse it
+    const fullUrl = new URL(href, window.location.origin).href;
+    const title = extractArticleTitle(fullUrl);
+    if (title) titles.add(title);
+  }
+
+  return [...titles];
+}
+
+// -----------------------------------------------------------------------------
+// Category extraction
+// -----------------------------------------------------------------------------
+
+function extractCategories(): string[] {
+  // Wikipedia: #mw-normal-catlinks ul li a
+  const catLinks = document.querySelectorAll<HTMLAnchorElement>(
+    "#mw-normal-catlinks ul li a"
+  );
+  const categories: string[] = [];
+  for (const a of catLinks) {
+    const text = a.textContent?.trim();
+    if (text) categories.push(text);
+  }
+  return categories;
 }
 
 // -----------------------------------------------------------------------------
@@ -72,15 +103,26 @@ window.addEventListener("scroll", () => {
 });
 
 // -----------------------------------------------------------------------------
-// Communication with background
+// Message types
 // -----------------------------------------------------------------------------
 
-// We need the current visit ID from the background. We get it by reading the
-// tab visit map — but from a content script we can't directly. Instead we use
-// a two-pass approach: send excerpt immediately, and let the background resolve
-// the current tab's visit ID via the sender tab ID.
+interface TabMetadataMessage {
+  type: "TAB_METADATA";
+  excerpt?: string;
+  scrollDepth?: number;
+  categories?: string[];
+}
 
-type ContentMessage = UpdateMetadataMessage;
+interface ContentLinksMessage {
+  type: "CONTENT_LINKS";
+  articleTitles: string[];
+}
+
+type ContentMessage = TabMetadataMessage | ContentLinksMessage;
+
+// -----------------------------------------------------------------------------
+// Communication with background
+// -----------------------------------------------------------------------------
 
 function sendToBackground(message: ContentMessage): void {
   chrome.runtime.sendMessage(message).catch(() => {
@@ -88,21 +130,12 @@ function sendToBackground(message: ContentMessage): void {
   });
 }
 
-// The background identifies which visit to update by matching the sender's
-// tab ID to the tab→visit map. We encode this via a special message type
-// that the background resolves internally.
-
-interface TabMetadataMessage {
-  type: "TAB_METADATA";
-  excerpt?: string;
-  scrollDepth?: number;
-}
-
-function sendTabMetadata(excerpt?: string, scrollDepth?: number): void {
+function sendTabMetadata(excerpt?: string, scrollDepth?: number, categories?: string[]): void {
   const msg: TabMetadataMessage = { type: "TAB_METADATA" };
   if (excerpt !== undefined) msg.excerpt = excerpt;
   if (scrollDepth !== undefined) msg.scrollDepth = scrollDepth;
-  chrome.runtime.sendMessage(msg).catch(() => {});
+  if (categories !== undefined && categories.length > 0) msg.categories = categories;
+  sendToBackground(msg);
 }
 
 // -----------------------------------------------------------------------------
@@ -110,9 +143,16 @@ function sendTabMetadata(excerpt?: string, scrollDepth?: number): void {
 // -----------------------------------------------------------------------------
 
 function init(): void {
-  // Send excerpt immediately on page load
+  // Send excerpt + categories immediately on page load
   const excerpt = extractExcerpt(200);
-  sendTabMetadata(excerpt ?? undefined);
+  const categories = extractCategories();
+  sendTabMetadata(excerpt ?? undefined, undefined, categories.length > 0 ? categories : undefined);
+
+  // Scan wiki links and send to background for contextual edge detection
+  const articleTitles = extractWikiLinks();
+  if (articleTitles.length > 0) {
+    sendToBackground({ type: "CONTENT_LINKS", articleTitles });
+  }
 
   // Send scroll depth before the page unloads
   window.addEventListener("beforeunload", () => {

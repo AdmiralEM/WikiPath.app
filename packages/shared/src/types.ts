@@ -29,6 +29,8 @@ export interface VisitMetadata {
   scrollDepth: number | null;
   /** First ~200 characters of the article body, for search/preview purposes. */
   excerpt: string | null;
+  /** Wikipedia categories on the article page, if captured. */
+  categories?: string[];
 }
 
 export interface Visit {
@@ -92,18 +94,33 @@ export interface Session {
 }
 
 // -----------------------------------------------------------------------------
-// Edge (derived, not stored)
+// Edge
 // -----------------------------------------------------------------------------
 
-export type EdgeType = "navigation" | "cross-session";
+export type EdgeType = "navigation" | "cross-session" | "contextual";
 
+/** Derived (not stored) — used for graph rendering only */
 export interface Edge {
   /** The visit the user navigated FROM */
   sourceVisitId: string;
   /** The visit the user navigated TO */
   targetVisitId: string;
-  /** Whether this was a direct navigation or a cross-session link */
+  /** Whether this was a direct navigation, cross-session, or contextual link */
   type: EdgeType;
+}
+
+/** Stored — persisted contextual edges discovered via content-link scanning */
+export interface StoredEdge {
+  /** Unique identifier (UUID v4) */
+  id: string;
+  /** Session this edge belongs to */
+  sessionId: string;
+  /** Visit where the link was found */
+  sourceVisitId: string;
+  /** Visit that was linked to */
+  targetVisitId: string;
+  /** Always "contextual" for stored edges */
+  type: "contextual";
 }
 
 // -----------------------------------------------------------------------------
@@ -121,6 +138,8 @@ export interface WikiPathExport {
   sessions: Session[];
   /** All visits */
   visits: Visit[];
+  /** All stored contextual edges (optional for backward compat with older exports) */
+  edges?: StoredEdge[];
 }
 
 // -----------------------------------------------------------------------------
@@ -142,6 +161,7 @@ export interface TopArticle {
 export interface ImportResult {
   sessions: number;
   visits: number;
+  edges: number;
 }
 
 /**
@@ -164,6 +184,10 @@ export interface StorageAdapter {
   getVisit(id: string): Promise<Visit | null>;
   createVisit(visit: Omit<Visit, "id">): Promise<Visit>;
   updateVisit(id: string, updates: Partial<Visit>): Promise<Visit>;
+
+  // --- Edges ---
+  getEdgesBySession(sessionId: string): Promise<StoredEdge[]>;
+  createEdge(edge: Omit<StoredEdge, "id">): Promise<StoredEdge>;
 
   // --- Search & Analysis ---
   searchVisits(query: string): Promise<Visit[]>;

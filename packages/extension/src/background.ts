@@ -20,6 +20,7 @@ import {
 import type {
   Session,
   SessionStateContext,
+  StoredEdge,
   Visit,
   WikiPathConfig,
 } from "@wikipath/shared";
@@ -275,6 +276,18 @@ async function recordVisit(
     }
   }
 
+  // Back-navigation / revisit: if this article already has a visit in the current
+  // session, don't create a duplicate — redirect the tab pointer to the existing visit.
+  const sessionVisits = await storage.getVisitsBySession(sessionId!);
+  const existingVisit = sessionVisits.find((v) => v.articleId === articleId);
+  if (existingVisit) {
+    await setState({ state: "active", activeSessionId: sessionId!, lastVisitAt: now });
+    await scheduleTimeoutAlarm();
+    tabVisits[tabId] = existingVisit.id;
+    await setTabVisits(tabVisits);
+    return;
+  }
+
   // Create the visit
   const newVisit = await storage.createVisit({
     sessionId: sessionId!,
@@ -316,8 +329,9 @@ type BackgroundMessage =
   | { type: "END_SESSION" }
   | { type: "EXPORT" }
   | { type: "UPDATE_METADATA"; visitId: string; excerpt?: string; scrollDepth?: number }
-  | { type: "TAB_METADATA"; excerpt?: string; scrollDepth?: number }
-  | { type: "GET_RECENT_SESSIONS"; limit: number };
+  | { type: "TAB_METADATA"; excerpt?: string; scrollDepth?: number; categories?: string[] }
+  | { type: "GET_RECENT_SESSIONS"; limit: number }
+  | { type: "CONTENT_LINKS"; articleTitles: string[] };
 
 type BackgroundResponse =
   | { ok: true; state: SessionStateContext; session: Session | null; config: WikiPathConfig }
@@ -459,7 +473,6 @@ async function handleMessage(
       const visit = await storage.getVisit(visitId);
       if (!visit) return { ok: true };
       const config = await getConfig();
-      const metadataUpdates: Partial<Visit> = {};
       let newMeta = { ...visit.metadata };
       if (message.excerpt !== undefined && config.captureExcerpts) {
         newMeta = { ...newMeta, excerpt: message.excerpt.slice(0, config.maxExcerptLength) };
@@ -471,8 +484,60 @@ async function handleMessage(
           newMeta = { ...newMeta, scrollDepth: message.scrollDepth };
         }
       }
-      metadataUpdates.metadata = newMeta;
-      await storage.updateVisit(visitId, metadataUpdates);
+      if (message.categories !== undefined && message.categories.length > 0) {
+        newMeta = { ...newMeta, categories: message.categories };
+      }
+      await storage.updateVisit(visitId, { metadata: newMeta });
+      return { ok: true };
+    }
+
+    case "CONTENT_LINKS": {
+      // Content script reports all wiki links on the current page.
+      // Cross-reference against the current session's visits and create contextual edges.
+      const tabId = sender.tab?.id;
+      if (tabId === undefined) return { ok: true };
+      const tabVisitsMap = await getTabVisits();
+      const currentVisitId = tabVisitsMap[tabId];
+      if (currentVisitId === undefined) return { ok: true };
+      const currentVisit = await storage.getVisit(currentVisitId);
+      if (!currentVisit) return { ok: true };
+
+      const sessionVisits = await storage.getVisitsBySession(currentVisit.sessionId);
+      // Build a map from articleId → visitId for quick lookup
+      const articleToVisit = new Map<string, string>();
+      for (const v of sessionVisits) {
+        articleToVisit.set(v.articleId, v.id);
+      }
+
+      // Get existing edges to avoid duplicates
+      const existingEdges = await storage.getEdgesBySession(currentVisit.sessionId);
+      const edgeSet = new Set<string>(
+        existingEdges.map((e) => `${e.sourceVisitId}:${e.targetVisitId}`)
+      );
+
+      for (const title of message.articleTitles) {
+        // Build articleId using the current visit's wiki domain
+        const articleId = `${currentVisit.wiki.domain}:${title}`;
+        const targetVisitId = articleToVisit.get(articleId);
+        if (!targetVisitId) continue;
+        // Skip self, direct parent, and direct children
+        if (targetVisitId === currentVisitId) continue;
+        if (targetVisitId === currentVisit.parentVisitId) continue;
+        const targetVisit = sessionVisits.find((v) => v.id === targetVisitId);
+        if (targetVisit?.parentVisitId === currentVisitId) continue;
+
+        const edgeKey = `${currentVisitId}:${targetVisitId}`;
+        if (edgeSet.has(edgeKey)) continue;
+        edgeSet.add(edgeKey);
+
+        await storage.createEdge({
+          sessionId: currentVisit.sessionId,
+          sourceVisitId: currentVisitId,
+          targetVisitId,
+          type: "contextual",
+        });
+      }
+
       return { ok: true };
     }
 
