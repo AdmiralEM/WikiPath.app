@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Track your Wikipedia browsing sessions and visualize them as interactive mind maps.",
   "permissions": [
+    "alarms",
     "storage",
     "unlimitedStorage",
     "tabs",
