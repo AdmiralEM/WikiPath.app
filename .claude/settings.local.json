@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l /workspaces/WikiPath.app/packages/web/src/app/*.* /workspaces/WikiPath.app/packages/extension/src/*.ts)",
+      "Bash(node -e \":*)",
+      "Bash(pnpm install:*)",
+      "Bash(wait)",
+      "Bash(pnpm approve-builds:*)",
+      "Bash(pnpm --filter @wikipath/shared build)",
+      "Bash(pnpm --filter @wikipath/shared test)",
+      "Bash(pnpm --filter @wikipath/extension lint)",
+      "Bash(pnpm --filter @wikipath/extension build)",
+      "Bash(pnpm --filter @wikipath/web build)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(pnpm --filter @wikipath/shared typecheck)",
+      "Bash(pnpm --filter @wikipath/shared exec tsc --noEmit)",
+      "Bash(pnpm --filter @wikipath/extension test)",
+      "Bash(pnpm --filter @wikipath/web test)",
+      "Bash(pnpm --recursive test)",
+      "Bash(grep -E chrome.[a-z]+. /workspaces/WikiPath.app/packages/extension/src/content.ts /workspaces/WikiPath.app/packages/extension/src/popup.ts)"
+    ]
+  }
+}
